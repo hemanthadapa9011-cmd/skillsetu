@@ -1,12 +1,10 @@
-from datetime import timedelta
-
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.crud.user import assign_role, create_student_profile, create_user, get_user_by_email, seed_default_roles
 from app.database import Base, engine
 from app.deps import get_current_user, get_db
-from app.models.user import Role, User
+from app.models.user import User
 from app.schemas.user import LoginRequest, RegisterStudentRequest, TokenResponse
 from app.security import create_access_token, verify_password
 
@@ -26,10 +24,10 @@ def ensure_roles():
 @router.post("/register", response_model=TokenResponse)
 def register_student(payload: RegisterStudentRequest, db: Session = Depends(get_db)):
     if payload.password != payload.confirm_password:
-        raise HTTPException(status_code=400, detail="Passwords do not match")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Passwords do not match")
 
-    if get_user_by_email(db, str(payload.email)):
-        raise HTTPException(status_code=400, detail="User with this email already exists")
+    if get_user_by_email(db, payload.email):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User with this email already exists")
 
     user = create_user(
         db,
@@ -51,9 +49,9 @@ def register_student(payload: RegisterStudentRequest, db: Session = Depends(get_
     )
     db.commit()
 
-    access_token = create_access_token(subject=user.email, expires_delta=timedelta(days=7))
+    token = create_access_token(subject=user.email)
     return TokenResponse(
-        access_token=access_token,
+        access_token=token,
         user={
             "id": user.id,
             "full_name": user.full_name,
@@ -72,15 +70,15 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
     if not user.is_active:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User is inactive")
 
-    access_token = create_access_token(subject=user.email, expires_delta=timedelta(days=7))
-    role = user.roles[0].name if user.roles else "student"
+    token = create_access_token(subject=user.email)
+    role_name = user.roles[0].name if user.roles else "student"
     return TokenResponse(
-        access_token=access_token,
+        access_token=token,
         user={
             "id": user.id,
             "full_name": user.full_name,
             "email": user.email,
-            "role": role,
+            "role": role_name,
         },
     )
 
@@ -95,15 +93,14 @@ def admin_login(payload: LoginRequest, db: Session = Depends(get_db)):
     if not role_names.intersection({"super_admin", "operations_admin", "hr_admin", "content_admin", "support_admin"}):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
 
-    access_token = create_access_token(subject=user.email, expires_delta=timedelta(days=7))
-    role = sorted(role_names)[0]
+    token = create_access_token(subject=user.email)
     return TokenResponse(
-        access_token=access_token,
+        access_token=token,
         user={
             "id": user.id,
             "full_name": user.full_name,
             "email": user.email,
-            "role": role,
+            "role": sorted(role_names)[0],
         },
     )
 
