@@ -1,13 +1,52 @@
-from fastapi import FastAPI
-from app.api.v1.auth import router as auth_router
-from app.api.v1.admin import router as admin_router
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.orm import Session
 
-app = FastAPI(title="SkillSetu 2.0", version="0.1.0")
+from app.crud.user import get_user_by_email, seed_default_roles
+from app.database import Base, engine
+from app.deps import get_current_user, get_db, require_roles
+from app.models.user import Role, User
 
-app.include_router(auth_router)
-app.include_router(admin_router)
+router = APIRouter(prefix="/api/v1/admin", tags=["admin"])
 
 
-@app.get("/")
-def read_root():
-    return {"app": "SkillSetu 2.0", "status": "running"}
+@router.on_event("startup")
+def ensure_schema():
+    Base.metadata.create_all(bind=engine)
+    db = Session(bind=engine)
+    try:
+        seed_default_roles(db)
+    finally:
+        db.close()
+
+
+@router.get("/dashboard")
+def admin_dashboard(current_user: User = Depends(require_roles("super_admin", "operations_admin", "hr_admin", "content_admin", "support_admin"))):
+    return {
+        "message": "Admin dashboard",
+        "admin": current_user.full_name,
+        "roles": [role.name for role in current_user.roles],
+        "metrics": {
+            "students": 0,
+            "companies": 0,
+            "jobs": 0,
+            "internships": 0,
+            "applications": 0,
+        },
+    }
+
+
+@router.get("/users")
+def list_users(
+    current_user: User = Depends(require_roles("super_admin", "operations_admin")),
+    db: Session = Depends(get_db),
+):
+    return [
+        {
+            "id": user.id,
+            "full_name": user.full_name,
+            "email": user.email,
+            "roles": [role.name for role in user.roles],
+            "is_active": user.is_active,
+        }
+        for user in db.query(User).all()
+    ]

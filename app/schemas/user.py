@@ -1,61 +1,64 @@
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Table, Text
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from datetime import datetime, timedelta
+from typing import Any
 
-from app.database import Base
-
-
-user_roles = Table(
-    "user_roles",
-    Base.metadata,
-    Column("user_id", ForeignKey("users.id"), primary_key=True),
-    Column("role_id", ForeignKey("roles.id"), primary_key=True),
-)
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 
-class Role(Base):
-    __tablename__ = "roles"
+class RegisterStudentRequest(BaseModel):
+    full_name: str = Field(..., min_length=2, max_length=255)
+    email: EmailStr
+    mobile_number: str | None = None
+    password: str = Field(..., min_length=8, max_length=128)
+    confirm_password: str = Field(..., min_length=8, max_length=128)
+    college: str | None = None
+    degree: str | None = None
+    branch: str | None = None
+    graduation_year: int | None = None
+    location: str | None = None
+    target_career_role: str | None = None
 
-    id: Mapped[int] = mapped_column(primary_key=True, index=True)
-    name: Mapped[str] = mapped_column(String(50), unique=True, index=True, nullable=False)
-    description: Mapped[str | None] = mapped_column(Text, nullable=True)
-
-    users: Mapped[list["User"]] = relationship(secondary=user_roles, back_populates="roles")
-
-
-class User(Base):
-    __tablename__ = "users"
-
-    id: Mapped[int] = mapped_column(primary_key=True, index=True)
-    full_name: Mapped[str] = mapped_column(String(255), nullable=False)
-    email: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
-    mobile_number: Mapped[str | None] = mapped_column(String(30), nullable=True)
-    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    is_verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
-
-    roles: Mapped[list[Role]] = relationship(secondary=user_roles, back_populates="users")
-    student_profile: Mapped["StudentProfile | None"] = relationship(back_populates="user", uselist=False)
+    model_config = ConfigDict(str_strip_whitespace=True)
 
 
-class StudentProfile(Base):
-    __tablename__ = "student_profiles"
-
-    id: Mapped[int] = mapped_column(primary_key=True, index=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), unique=True, nullable=False)
-    college: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    degree: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    branch: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    graduation_year: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    location: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    target_career_role: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
-
-    user: Mapped[User] = relationship(back_populates="student_profile")
+class LoginRequest(BaseModel):
+    email: EmailStr
+    password: str = Field(..., min_length=8, max_length=128)
 
 
-def utcnow():
-    from datetime import datetime, timezone
-    return datetime.now(timezone.utc)
+class TokenUser(BaseModel):
+    id: int
+    full_name: str
+    email: str
+    role: str
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    user: TokenUser
+
+
+class UserSummary(BaseModel):
+    id: int
+    full_name: str
+    email: str
+    roles: list[str]
+    is_active: bool = True
+    is_verified: bool = False
+
+
+class ProfileUpdateRequest(BaseModel):
+    full_name: str | None = None
+    college: str | None = None
+    degree: str | None = None
+    branch: str | None = None
+    location: str | None = None
+    target_career_role: str | None = None
+
+
+class DashboardMetrics(BaseModel):
+    students: int
+    companies: int
+    internships: int
+    jobs: int
+    applications: int

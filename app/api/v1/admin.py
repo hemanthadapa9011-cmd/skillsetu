@@ -1,11 +1,11 @@
 from datetime import timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from app.crud.user import assign_role, create_student_profile, create_user, get_user_by_email, seed_default_roles
 from app.database import Base, engine
-from app.deps import get_current_user
+from app.deps import get_current_user, get_db
 from app.models.user import Role, User
 from app.schemas.user import LoginRequest, RegisterStudentRequest, TokenResponse
 from app.security import create_access_token, verify_password
@@ -14,7 +14,7 @@ router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 
 
 @router.on_event("startup")
-def ensure_schema():
+def ensure_roles():
     Base.metadata.create_all(bind=engine)
     db = Session(bind=engine)
     try:
@@ -28,7 +28,7 @@ def register_student(payload: RegisterStudentRequest, db: Session = Depends(get_
     if payload.password != payload.confirm_password:
         raise HTTPException(status_code=400, detail="Passwords do not match")
 
-    if get_user_by_email(db, payload.email):
+    if get_user_by_email(db, str(payload.email)):
         raise HTTPException(status_code=400, detail="User with this email already exists")
 
     user = create_user(
@@ -52,12 +52,15 @@ def register_student(payload: RegisterStudentRequest, db: Session = Depends(get_
     db.commit()
 
     access_token = create_access_token(subject=user.email, expires_delta=timedelta(days=7))
-    return TokenResponse(access_token=access_token, user={
-        "id": user.id,
-        "full_name": user.full_name,
-        "email": user.email,
-        "role": "student",
-    })
+    return TokenResponse(
+        access_token=access_token,
+        user={
+            "id": user.id,
+            "full_name": user.full_name,
+            "email": user.email,
+            "role": "student",
+        },
+    )
 
 
 @router.post("/login", response_model=TokenResponse)
@@ -71,12 +74,15 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
 
     access_token = create_access_token(subject=user.email, expires_delta=timedelta(days=7))
     role = user.roles[0].name if user.roles else "student"
-    return TokenResponse(access_token=access_token, user={
-        "id": user.id,
-        "full_name": user.full_name,
-        "email": user.email,
-        "role": role,
-    })
+    return TokenResponse(
+        access_token=access_token,
+        user={
+            "id": user.id,
+            "full_name": user.full_name,
+            "email": user.email,
+            "role": role,
+        },
+    )
 
 
 @router.post("/admin/login", response_model=TokenResponse)
@@ -91,12 +97,15 @@ def admin_login(payload: LoginRequest, db: Session = Depends(get_db)):
 
     access_token = create_access_token(subject=user.email, expires_delta=timedelta(days=7))
     role = sorted(role_names)[0]
-    return TokenResponse(access_token=access_token, user={
-        "id": user.id,
-        "full_name": user.full_name,
-        "email": user.email,
-        "role": role,
-    })
+    return TokenResponse(
+        access_token=access_token,
+        user={
+            "id": user.id,
+            "full_name": user.full_name,
+            "email": user.email,
+            "role": role,
+        },
+    )
 
 
 @router.get("/me")
@@ -107,6 +116,3 @@ def get_me(current_user: User = Depends(get_current_user), db: Session = Depends
         "email": current_user.email,
         "roles": [role.name for role in current_user.roles],
     }
-
-
-from app.deps import get_db, get_current_user
