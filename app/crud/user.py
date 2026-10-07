@@ -1,64 +1,62 @@
-from sqlalchemy.orm import Session
+from datetime import datetime, timezone
 
-from app.models.user import Role, StudentProfile, User
-from app.security import get_password_hash
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Table, Text
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-
-def get_user_by_email(db: Session, email: str) -> User | None:
-    return db.query(User).filter(User.email == email).first()
+from app.database import Base
 
 
-def create_user(
-    db: Session,
-    *,
-    full_name: str,
-    email: str,
-    password: str,
-    mobile_number: str | None = None,
-) -> User:
-    user = User(
-        full_name=full_name,
-        email=email,
-        mobile_number=mobile_number,
-        password_hash=get_password_hash(password),
-        is_active=True,
-        is_verified=False,
-    )
-    db.add(user)
-    db.flush()
-    return user
+user_roles = Table(
+    "user_roles",
+    Base.metadata,
+    Column("user_id", ForeignKey("users.id"), primary_key=True),
+    Column("role_id", ForeignKey("roles.id"), primary_key=True),
+)
 
 
-def assign_role(db: Session, user: User, role_name: str) -> None:
-    role = db.query(Role).filter(Role.name == role_name).first()
-    if role is None:
-        role = Role(name=role_name, description=f"{role_name} role")
-        db.add(role)
-        db.flush()
-    if user not in role.users:
-        role.users.append(user)
+def utcnow():
+    return datetime.now(timezone.utc)
 
 
-def create_student_profile(db: Session, user: User, **kwargs) -> StudentProfile:
-    profile = StudentProfile(user_id=user.id, **kwargs)
-    db.add(profile)
-    db.flush()
-    return profile
+class Role(Base):
+    __tablename__ = "roles"
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    name: Mapped[str] = mapped_column(String(50), unique=True, index=True, nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    users: Mapped[list["User"]] = relationship(secondary=user_roles, back_populates="roles")
 
 
-def seed_default_roles(db: Session) -> None:
-    names = [
-        "student",
-        "company",
-        "college",
-        "employee",
-        "super_admin",
-        "operations_admin",
-        "hr_admin",
-        "content_admin",
-        "support_admin",
-    ]
-    for name in names:
-        if not db.query(Role).filter(Role.name == name).first():
-            db.add(Role(name=name, description=f"{name} role"))
-    db.commit()
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    full_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    email: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
+    mobile_number: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    is_verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
+
+    roles: Mapped[list[Role]] = relationship(secondary=user_roles, back_populates="users")
+    student_profile: Mapped["StudentProfile | None"] = relationship(back_populates="user", uselist=False)
+
+
+class StudentProfile(Base):
+    __tablename__ = "student_profiles"
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), unique=True, nullable=False)
+    college: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    degree: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    branch: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    graduation_year: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    location: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    target_career_role: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
+
+    user: Mapped["User"] = relationship(back_populates="student_profile")
