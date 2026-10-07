@@ -1,117 +1,46 @@
-from datetime import timedelta
-
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from app.crud.user import assign_role, create_student_profile, create_user, get_user_by_email, seed_default_roles
 from app.database import Base, engine
-from app.deps import get_current_user, get_db
+from app.deps import get_db, require_roles
 from app.models.user import User
-from app.schemas.user import LoginRequest, RegisterStudentRequest, TokenResponse
-from app.security import create_access_token, verify_password
 
-router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
+router = APIRouter(prefix="/api/v1/admin", tags=["admin"])
 
 
 @router.on_event("startup")
-def ensure_roles():
+def ensure_schema():
     Base.metadata.create_all(bind=engine)
-    db = Session(bind=engine)
-    try:
-        seed_default_roles(db)
-    finally:
-        db.close()
 
 
-@router.post("/register", response_model=TokenResponse)
-def register_student(payload: RegisterStudentRequest, db: Session = Depends(get_db)):
-    if payload.password != payload.confirm_password:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Passwords do not match")
-
-    if get_user_by_email(db, str(payload.email)):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User with this email already exists")
-
-    user = create_user(
-        db,
-        full_name=payload.full_name,
-        email=str(payload.email),
-        password=payload.password,
-        mobile_number=payload.mobile_number,
-    )
-    assign_role(db, user, "student")
-    create_student_profile(
-        db,
-        user,
-        college=payload.college,
-        degree=payload.degree,
-        branch=payload.branch,
-        graduation_year=payload.graduation_year,
-        location=payload.location,
-        target_career_role=payload.target_career_role,
-    )
-    db.commit()
-
-    token = create_access_token(subject=user.email, expires_delta=timedelta(days=7))
-    return TokenResponse(
-        access_token=token,
-        user={
-            "id": user.id,
-            "full_name": user.full_name,
-            "email": user.email,
-            "role": "student",
-        },
-    )
-
-
-@router.post("/login", response_model=TokenResponse)
-def login(payload: LoginRequest, db: Session = Depends(get_db)):
-    user = get_user_by_email(db, str(payload.email))
-    if not user or not verify_password(payload.password, user.password_hash):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
-
-    if not user.is_active:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User is inactive")
-
-    token = create_access_token(subject=user.email, expires_delta=timedelta(days=7))
-    role_name = user.roles[0].name if user.roles else "student"
-    return TokenResponse(
-        access_token=token,
-        user={
-            "id": user.id,
-            "full_name": user.full_name,
-            "email": user.email,
-            "role": role_name,
-        },
-    )
-
-
-@router.post("/admin/login", response_model=TokenResponse)
-def admin_login(payload: LoginRequest, db: Session = Depends(get_db)):
-    user = get_user_by_email(db, str(payload.email))
-    if not user or not verify_password(payload.password, user.password_hash):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
-
-    role_names = {role.name for role in user.roles}
-    if not role_names.intersection({"super_admin", "operations_admin", "hr_admin", "content_admin", "support_admin"}):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
-
-    token = create_access_token(subject=user.email, expires_delta=timedelta(days=7))
-    return TokenResponse(
-        access_token=token,
-        user={
-            "id": user.id,
-            "full_name": user.full_name,
-            "email": user.email,
-            "role": sorted(role_names)[0],
-        },
-    )
-
-
-@router.get("/me")
-def get_me(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+@router.get("/dashboard")
+def admin_dashboard(current_user: User = Depends(require_roles("super_admin", "operations_admin", "hr_admin", "content_admin", "support_admin"))):
     return {
-        "id": current_user.id,
-        "full_name": current_user.full_name,
-        "email": current_user.email,
+        "message": "Admin dashboard",
+        "admin": current_user.full_name,
         "roles": [role.name for role in current_user.roles],
+        "metrics": {
+            "students": 0,
+            "companies": 0,
+            "jobs": 0,
+            "internships": 0,
+            "applications": 0,
+        },
     }
+
+
+@router.get("/users")
+def list_users(
+    current_user: User = Depends(require_roles("super_admin", "operations_admin")),
+    db: Session = Depends(get_db),
+):
+    return [
+        {
+            "id": user.id,
+            "full_name": user.full_name,
+            "email": user.email,
+            "roles": [role.name for role in user.roles],
+            "is_active": user.is_active,
+        }
+        for user in db.query(User).all()
+    ]
