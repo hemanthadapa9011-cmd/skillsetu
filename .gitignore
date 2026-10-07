@@ -1,0 +1,13 @@
+# .gitignore
+
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.env
+*.db
+alembic/versions/*.pyc
+.mypy_cache/
+.DS_Store
+coverage.xml
+htmlcov/
