@@ -23,10 +23,7 @@ DBSession = Annotated[Session, Depends(get_db)]
 TokenCredentials = Annotated[HTTPAuthorizationCredentials, Depends(bearer_scheme)]
 
 
-def get_current_user(
-    credentials: TokenCredentials,
-    db: DBSession,
-) -> User:
+def get_current_user(credentials: TokenCredentials, db: DBSession) -> User:
     token = credentials.credentials
     try:
         payload = decode_access_token(token)

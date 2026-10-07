@@ -108,7 +108,7 @@ def admin_login(payload: LoginRequest, db: Session = Depends(get_db)):
 
 
 @router.get("/me")
-def get_me(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def get_me(current_user: User = Depends(get_current_user)):
     return {
         "id": current_user.id,
         "full_name": current_user.full_name,

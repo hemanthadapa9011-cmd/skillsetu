@@ -1,64 +1,61 @@
-from sqlalchemy.orm import Session
-
-from app.models.user import Role, StudentProfile, User
-from app.security import get_password_hash
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 
-def get_user_by_email(db: Session, email: str) -> User | None:
-    return db.query(User).filter(User.email == email).first()
+class RegisterStudentRequest(BaseModel):
+    full_name: str = Field(..., min_length=2, max_length=255)
+    email: EmailStr
+    mobile_number: str | None = None
+    password: str = Field(..., min_length=8, max_length=128)
+    confirm_password: str = Field(..., min_length=8, max_length=128)
+    college: str | None = None
+    degree: str | None = None
+    branch: str | None = None
+    graduation_year: int | None = None
+    location: str | None = None
+    target_career_role: str | None = None
+
+    model_config = ConfigDict(str_strip_whitespace=True)
 
 
-def create_user(
-    db: Session,
-    *,
-    full_name: str,
-    email: str,
-    password: str,
-    mobile_number: str | None = None,
-) -> User:
-    user = User(
-        full_name=full_name,
-        email=email,
-        mobile_number=mobile_number,
-        password_hash=get_password_hash(password),
-        is_active=True,
-        is_verified=False,
-    )
-    db.add(user)
-    db.flush()
-    return user
+class LoginRequest(BaseModel):
+    email: EmailStr
+    password: str = Field(..., min_length=8, max_length=128)
 
 
-def assign_role(db: Session, user: User, role_name: str) -> None:
-    role = db.query(Role).filter(Role.name == role_name).first()
-    if role is None:
-        role = Role(name=role_name, description=f"{role_name} role")
-        db.add(role)
-        db.flush()
-    if user not in role.users:
-        role.users.append(user)
+class TokenUser(BaseModel):
+    id: int
+    full_name: str
+    email: str
+    role: str
 
 
-def create_student_profile(db: Session, user: User, **kwargs) -> StudentProfile:
-    profile = StudentProfile(user_id=user.id, **kwargs)
-    db.add(profile)
-    db.flush()
-    return profile
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    user: TokenUser
 
 
-def seed_default_roles(db: Session) -> None:
-    names = [
-        "student",
-        "company",
-        "college",
-        "employee",
-        "super_admin",
-        "operations_admin",
-        "hr_admin",
-        "content_admin",
-        "support_admin",
-    ]
-    for name in names:
-        if not db.query(Role).filter(Role.name == name).first():
-            db.add(Role(name=name, description=f"{name} role"))
-    db.commit()
+class UserSummary(BaseModel):
+    id: int
+    full_name: str
+    email: str
+    roles: list[str]
+    is_active: bool = True
+    is_verified: bool = False
+
+
+class ProfileUpdateRequest(BaseModel):
+    full_name: str | None = None
+    college: str | None = None
+    degree: str | None = None
+    branch: str | None = None
+    location: str | None = None
+    target_career_role: str | None = None
+
+
+class DashboardMetrics(BaseModel):
+    students: int
+    companies: int
+    internships: int
+    jobs: int
+    applications: int
